@@ -2,7 +2,6 @@ import time
 import pytest
 import typer
 import os
-import json
 import sys
 from typing_extensions import Annotated
 from typing import Optional
@@ -18,7 +17,6 @@ from deepeval.utils import (
     set_verbose_mode,
 )
 from deepeval.test_run import invoke_test_run_end_hook
-from deepeval.telemetry import capture_evaluation_run
 from deepeval.utils import set_is_running_deepeval
 
 app = typer.Typer(name="test")
@@ -158,8 +156,7 @@ def run(
     pytest_args.extend(["-p", "plugins"])
 
     start_time = time.perf_counter()
-    with capture_evaluation_run("deepeval test run"):
-        pytest_retcode = pytest.main(pytest_args)
+    pytest_retcode = pytest.main(pytest_args)
     end_time = time.perf_counter()
     run_duration = end_time - start_time
     global_test_run_manager.wrap_up_test_run(run_duration, True, display)

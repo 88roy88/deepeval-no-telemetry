@@ -38,7 +38,7 @@ from deepeval.metrics import BaseMetric
 from deepeval.dataset.golden import Golden
 from deepeval.test_case import LLMTestCase
 from deepeval.utils import get_or_create_event_loop
-from deepeval.telemetry import capture_red_teamer_run
+
 import inspect
 
 
@@ -130,134 +130,130 @@ class RedTeamer:
             assert not inspect.iscoroutinefunction(
                 target_model_callback
             ), "`target_model_callback` needs to be sync. `async_mode` has been set to False."
-            with capture_red_teamer_run(
-                attacks_per_vulnerability_type=attacks_per_vulnerability_type,
-                vulnerabilities=vulnerabilities,
-                attack_enhancements=attack_enhancements,
-            ):
-                # Initialize metric map
-                metrics_map = self.get_red_teaming_metrics_map()
 
-                # Generate attacks
-                attacks: List[Attack] = (
-                    self.attack_synthesizer.generate_attacks(
-                        target_model_callback=target_model_callback,
-                        attacks_per_vulnerability_type=attacks_per_vulnerability_type,
-                        vulnerabilities=vulnerabilities,
-                        attack_enhancements=attack_enhancements,
-                        ignore_errors=ignore_errors,
-                    )
+            # Initialize metric map
+            metrics_map = self.get_red_teaming_metrics_map()
+
+            # Generate attacks
+            attacks: List[Attack] = (
+                self.attack_synthesizer.generate_attacks(
+                    target_model_callback=target_model_callback,
+                    attacks_per_vulnerability_type=attacks_per_vulnerability_type,
+                    vulnerabilities=vulnerabilities,
+                    attack_enhancements=attack_enhancements,
+                    ignore_errors=ignore_errors,
                 )
+            )
 
-                # Create a mapping of vulnerabilities to attacks
-                vulnerability_to_attacks_map: Dict[
-                    VulnerabilityType, List[Attack]
-                ] = {}
-                for attack in attacks:
-                    if (
+            # Create a mapping of vulnerabilities to attacks
+            vulnerability_to_attacks_map: Dict[
+                VulnerabilityType, List[Attack]
+            ] = {}
+            for attack in attacks:
+                if (
+                    attack.vulnerability_type
+                    not in vulnerability_to_attacks_map
+                ):
+                    vulnerability_to_attacks_map[
                         attack.vulnerability_type
-                        not in vulnerability_to_attacks_map
-                    ):
-                        vulnerability_to_attacks_map[
-                            attack.vulnerability_type
-                        ] = [attack]
-                    else:
-                        vulnerability_to_attacks_map[
-                            attack.vulnerability_type
-                        ].append(attack)
+                    ] = [attack]
+                else:
+                    vulnerability_to_attacks_map[
+                        attack.vulnerability_type
+                    ].append(attack)
 
-                # Evaluate each attack by vulnerability
-                red_teaming_results = []
-                red_teaming_results_breakdown = []
+            # Evaluate each attack by vulnerability
+            red_teaming_results = []
+            red_teaming_results_breakdown = []
 
-                num_vulnerability_types = sum(
-                    len(v.get_types()) for v in vulnerabilities
-                )
-                pbar = tqdm(
-                    vulnerability_to_attacks_map.items(),
-                    desc=f"📝 Evaluating {num_vulnerability_types} vulnerability types across {len(vulnerabilities)} vulnerabilities",
-                )
-                for vulnerability_type, attacks in pbar:
-                    scores = []
-                    for attack in attacks:
-                        metric: BaseMetric = metrics_map.get(
-                            vulnerability_type
-                        )()
-                        risk = llm_risk_categories_map.get(vulnerability_type)
-                        result = {
-                            "Vulnerability": attack.vulnerability,
-                            "Vulnerability Type": vulnerability_type.value,
-                            "Attack Enhancement": attack.attack_enhancement,
-                            "Risk Category": (
-                                risk.value if risk is not None else "Others"
-                            ),
-                            "Input": attack.input,
-                            "Target Output": None,
-                            "Score": None,
-                            "Reason": None,
-                            "Error": None,
-                        }
+            num_vulnerability_types = sum(
+                len(v.get_types()) for v in vulnerabilities
+            )
+            pbar = tqdm(
+                vulnerability_to_attacks_map.items(),
+                desc=f"📝 Evaluating {num_vulnerability_types} vulnerability types across {len(vulnerabilities)} vulnerabilities",
+            )
+            for vulnerability_type, attacks in pbar:
+                scores = []
+                for attack in attacks:
+                    metric: BaseMetric = metrics_map.get(
+                        vulnerability_type
+                    )()
+                    risk = llm_risk_categories_map.get(vulnerability_type)
+                    result = {
+                        "Vulnerability": attack.vulnerability,
+                        "Vulnerability Type": vulnerability_type.value,
+                        "Attack Enhancement": attack.attack_enhancement,
+                        "Risk Category": (
+                            risk.value if risk is not None else "Others"
+                        ),
+                        "Input": attack.input,
+                        "Target Output": None,
+                        "Score": None,
+                        "Reason": None,
+                        "Error": None,
+                    }
 
-                        # this will only go through if ignore_errors == True
-                        if attack.error:
-                            result["Error"] = attack.error
+                    # this will only go through if ignore_errors == True
+                    if attack.error:
+                        result["Error"] = attack.error
+                        red_teaming_results_breakdown.append(result)
+                        continue
+
+                    try:
+                        target_output = target_model_callback(attack.input)
+                        result["Target Output"] = target_output
+                    except Exception:
+                        if ignore_errors:
+                            result["Error"] = (
+                                "Error generating output from target LLM"
+                            )
                             red_teaming_results_breakdown.append(result)
                             continue
+                        else:
+                            raise
 
-                        try:
-                            target_output = target_model_callback(attack.input)
-                            result["Target Output"] = target_output
-                        except Exception:
-                            if ignore_errors:
-                                result["Error"] = (
-                                    "Error generating output from target LLM"
-                                )
-                                red_teaming_results_breakdown.append(result)
-                                continue
-                            else:
-                                raise
-
-                        test_case = LLMTestCase(
-                            input=attack.input,
-                            actual_output=target_output,
-                        )
-
-                        try:
-                            metric.measure(test_case)
-                            result["Score"] = metric.score
-                            result["Reason"] = metric.reason
-                            scores.append(metric.score)
-                        except Exception:
-                            if ignore_errors:
-                                result["Error"] = (
-                                    f"Error evaluating target LLM output for the '{vulnerability_type.value}' vulnerability"
-                                )
-                                red_teaming_results_breakdown.append(result)
-                                continue
-                            else:
-                                raise
-
-                        red_teaming_results_breakdown.append(result)
-
-                    # Calculate average score for each vulnerability
-                    avg_vulnerability_score = (
-                        sum(scores) / len(scores) if scores else None
-                    )
-                    red_teaming_results.append(
-                        {
-                            "Vulnerability": attack.vulnerability,
-                            "Vulnerability Type": vulnerability_type.value,
-                            "Average Score": avg_vulnerability_score,
-                        }
+                    test_case = LLMTestCase(
+                        input=attack.input,
+                        actual_output=target_output,
                     )
 
-                # Convert results to pandas DataFrames
-                df_results = pd.DataFrame(red_teaming_results)
-                df_breakdown = pd.DataFrame(red_teaming_results_breakdown)
-                self.vulnerability_scores_breakdown = df_breakdown
-                self.vulnerability_scores = df_results
+                    try:
+                        metric.measure(test_case)
+                        result["Score"] = metric.score
+                        result["Reason"] = metric.reason
+                        scores.append(metric.score)
+                    except Exception:
+                        if ignore_errors:
+                            result["Error"] = (
+                                f"Error evaluating target LLM output for the '{vulnerability_type.value}' vulnerability"
+                            )
+                            red_teaming_results_breakdown.append(result)
+                            continue
+                        else:
+                            raise
 
-                return df_results
+                    red_teaming_results_breakdown.append(result)
+
+                # Calculate average score for each vulnerability
+                avg_vulnerability_score = (
+                    sum(scores) / len(scores) if scores else None
+                )
+                red_teaming_results.append(
+                    {
+                        "Vulnerability": attack.vulnerability,
+                        "Vulnerability Type": vulnerability_type.value,
+                        "Average Score": avg_vulnerability_score,
+                    }
+                )
+
+            # Convert results to pandas DataFrames
+            df_results = pd.DataFrame(red_teaming_results)
+            df_breakdown = pd.DataFrame(red_teaming_results_breakdown)
+            self.vulnerability_scores_breakdown = df_breakdown
+            self.vulnerability_scores = df_results
+
+            return df_results
 
     async def a_scan(
         self,

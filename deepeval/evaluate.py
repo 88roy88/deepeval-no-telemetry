@@ -21,7 +21,6 @@ from deepeval.utils import (
     should_use_cache,
     should_verbose_print,
 )
-from deepeval.telemetry import capture_evaluation_run
 from deepeval.metrics import (
     BaseMetric,
     BaseConversationalMetric,
@@ -302,130 +301,41 @@ def execute_test_cases(
         conversational_test_case_count = -1
         show_metric_indicator = show_indicator and not _use_bar_indicator
         for test_case in test_cases:
-            with capture_evaluation_run("test case"):
-                for metric in metrics:
-                    metric.error = None  # Reset metric error
+            for metric in metrics:
+                metric.error = None  # Reset metric error
 
-                if isinstance(test_case, LLMTestCase):
-                    if len(llm_metrics) == 0:
-                        continue
+            if isinstance(test_case, LLMTestCase):
+                if len(llm_metrics) == 0:
+                    continue
 
-                    llm_test_case_count += 1
-                    cached_test_case = None
-                    if use_cache:
-                        cached_test_case = (
-                            global_test_run_cache_manager.get_cached_test_case(
-                                test_case, test_run.hyperparameters
-                            )
+                llm_test_case_count += 1
+                cached_test_case = None
+                if use_cache:
+                    cached_test_case = (
+                        global_test_run_cache_manager.get_cached_test_case(
+                            test_case, test_run.hyperparameters
                         )
-
-                    ##### Metric Calculation #####
-                    api_test_case: LLMApiTestCase = create_api_test_case(
-                        test_case, llm_test_case_count
-                    )
-                    new_cached_test_case: CachedTestCase = CachedTestCase()
-
-                    test_start_time = time.perf_counter()
-                    read_all_metrics_from_cache = True
-                    for metric in llm_metrics:
-                        metric_data = None
-                        if cached_test_case is not None:
-                            cached_metric_data = Cache.get_metric_data(
-                                metric, cached_test_case
-                            )
-                            if cached_metric_data:
-                                metric_data = cached_metric_data.metric_data
-
-                        if metric_data is None:
-                            read_all_metrics_from_cache = False
-                            try:
-                                metric.measure(
-                                    test_case,
-                                    _show_indicator=show_metric_indicator,
-                                )
-                            except MissingTestCaseParamsError as e:
-                                if skip_on_missing_params:
-                                    continue
-                                else:
-                                    if ignore_errors:
-                                        metric.error = str(e)
-                                        metric.success = False
-                                    else:
-                                        raise
-                            except TypeError:
-                                try:
-                                    metric.measure(test_case)
-                                except MissingTestCaseParamsError as e:
-                                    if skip_on_missing_params:
-                                        continue
-                                    else:
-                                        if ignore_errors:
-                                            metric.error = str(e)
-                                            metric.success = False
-                                        else:
-                                            raise
-                                except Exception as e:
-                                    if ignore_errors:
-                                        metric.error = str(e)
-                                        metric.success = False
-                                    else:
-                                        raise
-                            except Exception as e:
-                                if ignore_errors:
-                                    metric.error = str(e)
-                                    metric.success = False
-                                else:
-                                    raise
-                            metric_data = create_metric_data(metric)
-
-                        # here, we will check for an additional property on the flattened test cases to see if updating is necessary
-                        api_test_case.update_metric_data(metric_data)
-                        if metric.error is None:
-                            cache_metric_data = deepcopy(metric_data)
-                            cache_metric_data.evaluation_cost = 0  # Cached metrics will have evaluation cost as 0, not None.
-                            updated_cached_metric_data = CachedMetricData(
-                                metric_data=cache_metric_data,
-                                metric_configuration=Cache.create_metric_configuration(
-                                    metric
-                                ),
-                            )
-                            new_cached_test_case.cached_metrics_data.append(
-                                updated_cached_metric_data
-                            )
-
-                    test_end_time = time.perf_counter()
-                    if read_all_metrics_from_cache:
-                        run_duration = 0
-                    else:
-                        run_duration = test_end_time - test_start_time
-                    api_test_case.update_run_duration(run_duration)
-
-                    ### Update Test Run ###
-                    test_run_manager.update_test_run(api_test_case, test_case)
-
-                    ### Cache Test Run ###
-                    global_test_run_cache_manager.cache_test_case(
-                        test_case,
-                        new_cached_test_case,
-                        test_run.hyperparameters,
-                    )
-                    global_test_run_cache_manager.cache_test_case(
-                        test_case,
-                        new_cached_test_case,
-                        test_run.hyperparameters,
-                        to_temp=True,
                     )
 
-                # No caching and not sending test cases to Confident AI for multimodal metrics yet
-                elif isinstance(test_case, MLLMTestCase):
-                    if len(mllm_metrics) == 0:
-                        continue
+                ##### Metric Calculation #####
+                api_test_case: LLMApiTestCase = create_api_test_case(
+                    test_case, llm_test_case_count
+                )
+                new_cached_test_case: CachedTestCase = CachedTestCase()
 
-                    api_test_case: LLMApiTestCase = create_api_test_case(
-                        test_case, llm_test_case_count
-                    )
-                    test_start_time = time.perf_counter()
-                    for metric in mllm_metrics:
+                test_start_time = time.perf_counter()
+                read_all_metrics_from_cache = True
+                for metric in llm_metrics:
+                    metric_data = None
+                    if cached_test_case is not None:
+                        cached_metric_data = Cache.get_metric_data(
+                            metric, cached_test_case
+                        )
+                        if cached_metric_data:
+                            metric_data = cached_metric_data.metric_data
+
+                    if metric_data is None:
+                        read_all_metrics_from_cache = False
                         try:
                             metric.measure(
                                 test_case,
@@ -465,57 +375,76 @@ def execute_test_cases(
                             else:
                                 raise
                         metric_data = create_metric_data(metric)
-                        api_test_case.update_metric_data(metric_data)
 
-                    test_end_time = time.perf_counter()
-                    if len(mllm_metrics) > 0:
-                        run_duration = test_end_time - test_start_time
-                        api_test_case.update_run_duration(run_duration)
-
-                    ### Update Test Run ###
-                    test_run_manager.update_test_run(api_test_case, test_case)
-
-                # No caching for conversational metrics yet
-                elif isinstance(test_case, ConversationalTestCase):
-                    if len(metrics) == 0:
-                        continue
-
-                    conversational_test_case_count += 1
-                    api_test_case: ConversationalApiTestCase = (
-                        create_api_test_case(
-                            test_case, conversational_test_case_count
+                    # here, we will check for an additional property on the flattened test cases to see if updating is necessary
+                    api_test_case.update_metric_data(metric_data)
+                    if metric.error is None:
+                        cache_metric_data = deepcopy(metric_data)
+                        cache_metric_data.evaluation_cost = 0  # Cached metrics will have evaluation cost as 0, not None.
+                        updated_cached_metric_data = CachedMetricData(
+                            metric_data=cache_metric_data,
+                            metric_configuration=Cache.create_metric_configuration(
+                                metric
+                            ),
                         )
-                    )
+                        new_cached_test_case.cached_metrics_data.append(
+                            updated_cached_metric_data
+                        )
 
-                    test_start_time = time.perf_counter()
-                    for metric in metrics:
+                test_end_time = time.perf_counter()
+                if read_all_metrics_from_cache:
+                    run_duration = 0
+                else:
+                    run_duration = test_end_time - test_start_time
+                api_test_case.update_run_duration(run_duration)
+
+                ### Update Test Run ###
+                test_run_manager.update_test_run(api_test_case, test_case)
+
+                ### Cache Test Run ###
+                global_test_run_cache_manager.cache_test_case(
+                    test_case,
+                    new_cached_test_case,
+                    test_run.hyperparameters,
+                )
+                global_test_run_cache_manager.cache_test_case(
+                    test_case,
+                    new_cached_test_case,
+                    test_run.hyperparameters,
+                    to_temp=True,
+                )
+
+            # No caching and not sending test cases to Confident AI for multimodal metrics yet
+            elif isinstance(test_case, MLLMTestCase):
+                if len(mllm_metrics) == 0:
+                    continue
+
+                api_test_case: LLMApiTestCase = create_api_test_case(
+                    test_case, llm_test_case_count
+                )
+                test_start_time = time.perf_counter()
+                for metric in mllm_metrics:
+                    try:
+                        metric.measure(
+                            test_case,
+                            _show_indicator=show_metric_indicator,
+                        )
+                    except MissingTestCaseParamsError as e:
+                        if skip_on_missing_params:
+                            continue
+                        else:
+                            if ignore_errors:
+                                metric.error = str(e)
+                                metric.success = False
+                            else:
+                                raise
+                    except TypeError:
                         try:
-                            metric.measure(
-                                test_case,
-                                _show_indicator=show_metric_indicator,
-                            )
+                            metric.measure(test_case)
                         except MissingTestCaseParamsError as e:
                             if skip_on_missing_params:
                                 continue
                             else:
-                                if ignore_errors:
-                                    metric.error = str(e)
-                                    metric.success = False
-                                else:
-                                    raise
-                        except TypeError:
-                            try:
-                                metric.measure(test_case)
-                            except MissingTestCaseParamsError as e:
-                                if skip_on_missing_params:
-                                    continue
-                                else:
-                                    if ignore_errors:
-                                        metric.error = str(e)
-                                        metric.success = False
-                                    else:
-                                        raise
-                            except Exception as e:
                                 if ignore_errors:
                                     metric.error = str(e)
                                     metric.success = False
@@ -527,22 +456,91 @@ def execute_test_cases(
                                 metric.success = False
                             else:
                                 raise
+                    except Exception as e:
+                        if ignore_errors:
+                            metric.error = str(e)
+                            metric.success = False
+                        else:
+                            raise
+                    metric_data = create_metric_data(metric)
+                    api_test_case.update_metric_data(metric_data)
 
-                        metric_data = create_metric_data(metric)
-                        api_test_case.update_metric_data(metric_data)
-
-                    test_end_time = time.perf_counter()
+                test_end_time = time.perf_counter()
+                if len(mllm_metrics) > 0:
                     run_duration = test_end_time - test_start_time
                     api_test_case.update_run_duration(run_duration)
 
-                    ### Update Test Run ###
-                    test_run_manager.update_test_run(api_test_case, test_case)
+                ### Update Test Run ###
+                test_run_manager.update_test_run(api_test_case, test_case)
 
-                test_result = create_test_result(api_test_case)
-                test_results.append(test_result)
+            # No caching for conversational metrics yet
+            elif isinstance(test_case, ConversationalTestCase):
+                if len(metrics) == 0:
+                    continue
 
-                if pbar is not None:
-                    pbar.update(1)
+                conversational_test_case_count += 1
+                api_test_case: ConversationalApiTestCase = (
+                    create_api_test_case(
+                        test_case, conversational_test_case_count
+                    )
+                )
+
+                test_start_time = time.perf_counter()
+                for metric in metrics:
+                    try:
+                        metric.measure(
+                            test_case,
+                            _show_indicator=show_metric_indicator,
+                        )
+                    except MissingTestCaseParamsError as e:
+                        if skip_on_missing_params:
+                            continue
+                        else:
+                            if ignore_errors:
+                                metric.error = str(e)
+                                metric.success = False
+                            else:
+                                raise
+                    except TypeError:
+                        try:
+                            metric.measure(test_case)
+                        except MissingTestCaseParamsError as e:
+                            if skip_on_missing_params:
+                                continue
+                            else:
+                                if ignore_errors:
+                                    metric.error = str(e)
+                                    metric.success = False
+                                else:
+                                    raise
+                        except Exception as e:
+                            if ignore_errors:
+                                metric.error = str(e)
+                                metric.success = False
+                            else:
+                                raise
+                    except Exception as e:
+                        if ignore_errors:
+                            metric.error = str(e)
+                            metric.success = False
+                        else:
+                            raise
+
+                    metric_data = create_metric_data(metric)
+                    api_test_case.update_metric_data(metric_data)
+
+                test_end_time = time.perf_counter()
+                run_duration = test_end_time - test_start_time
+                api_test_case.update_run_duration(run_duration)
+
+                ### Update Test Run ###
+                test_run_manager.update_test_run(api_test_case, test_case)
+
+            test_result = create_test_result(api_test_case)
+            test_results.append(test_result)
+
+            if pbar is not None:
+                pbar.update(1)
 
     if show_indicator and _use_bar_indicator:
         with tqdm(
@@ -617,81 +615,12 @@ async def a_execute_test_cases(
             bar_format="{desc}: |{bar}|{percentage:3.0f}% ({n_fmt}/{total_fmt}) [Time Taken: {elapsed}, {rate_fmt}{postfix}]",
         ) as pbar:
             for test_case in test_cases:
-                with capture_evaluation_run("test case"):
-                    if isinstance(test_case, LLMTestCase):
-                        if len(llm_metrics) == 0:
-                            pbar.update(1)
-                            continue
-
-                        llm_test_case_counter += 1
-                        copied_llm_metrics: List[BaseMetric] = copy_metrics(
-                            llm_metrics
-                        )
-                        task = execute_with_semaphore(
-                            func=a_execute_llm_test_cases,
-                            metrics=copied_llm_metrics,
-                            test_case=test_case,
-                            test_run_manager=test_run_manager,
-                            test_results=test_results,
-                            count=llm_test_case_counter,
-                            test_run=test_run,
-                            ignore_errors=ignore_errors,
-                            skip_on_missing_params=skip_on_missing_params,
-                            use_cache=use_cache,
-                            show_indicator=show_indicator,
-                            _use_bar_indicator=_use_bar_indicator,
-                            pbar=pbar,
-                        )
-                        tasks.append(asyncio.create_task(task))
-
-                    elif isinstance(test_case, MLLMTestCase):
-                        mllm_test_case_counter += 1
-                        copied_multimodal_metrics: List[
-                            BaseMultimodalMetric
-                        ] = copy_metrics(mllm_metrics)
-                        task = execute_with_semaphore(
-                            func=a_execute_mllm_test_cases,
-                            metrics=copied_multimodal_metrics,
-                            test_case=test_case,
-                            test_run_manager=test_run_manager,
-                            test_results=test_results,
-                            count=mllm_test_case_counter,
-                            ignore_errors=ignore_errors,
-                            skip_on_missing_params=skip_on_missing_params,
-                            show_indicator=show_indicator,
-                            _use_bar_indicator=_use_bar_indicator,
-                            pbar=pbar,
-                        )
-                        tasks.append(asyncio.create_task(task))
-
-                    elif isinstance(test_case, ConversationalTestCase):
-                        conversational_test_case_counter += 1
-
-                        task = execute_with_semaphore(
-                            func=a_execute_conversational_test_cases,
-                            metrics=copy_metrics(metrics),
-                            test_case=test_case,
-                            test_run_manager=test_run_manager,
-                            test_results=test_results,
-                            count=conversational_test_case_counter,
-                            ignore_errors=ignore_errors,
-                            skip_on_missing_params=skip_on_missing_params,
-                            show_indicator=show_indicator,
-                            _use_bar_indicator=_use_bar_indicator,
-                            pbar=pbar,
-                        )
-                        tasks.append(asyncio.create_task(task))
-
-                    await asyncio.sleep(throttle_value)
-            await asyncio.gather(*tasks)
-    else:
-        for test_case in test_cases:
-            with capture_evaluation_run("test case"):
                 if isinstance(test_case, LLMTestCase):
                     if len(llm_metrics) == 0:
+                        pbar.update(1)
                         continue
-                    llm_test_case_counter += 1
 
+                    llm_test_case_counter += 1
                     copied_llm_metrics: List[BaseMetric] = copy_metrics(
                         llm_metrics
                     )
@@ -706,38 +635,17 @@ async def a_execute_test_cases(
                         ignore_errors=ignore_errors,
                         skip_on_missing_params=skip_on_missing_params,
                         use_cache=use_cache,
-                        _use_bar_indicator=_use_bar_indicator,
                         show_indicator=show_indicator,
-                    )
-                    tasks.append(asyncio.create_task((task)))
-
-                elif isinstance(test_case, ConversationalTestCase):
-                    conversational_test_case_counter += 1
-                    copied_conversational_metrics: List[
-                        BaseConversationalMetric
-                    ] = []
-                    copied_conversational_metrics = copy_metrics(
-                        conversational_metrics
-                    )
-                    task = execute_with_semaphore(
-                        func=a_execute_conversational_test_cases,
-                        metrics=copied_conversational_metrics,
-                        test_case=test_case,
-                        test_run_manager=test_run_manager,
-                        test_results=test_results,
-                        count=conversational_test_case_counter,
-                        ignore_errors=ignore_errors,
-                        skip_on_missing_params=skip_on_missing_params,
                         _use_bar_indicator=_use_bar_indicator,
-                        show_indicator=show_indicator,
+                        pbar=pbar,
                     )
-                    tasks.append(asyncio.create_task((task)))
+                    tasks.append(asyncio.create_task(task))
 
                 elif isinstance(test_case, MLLMTestCase):
                     mllm_test_case_counter += 1
-                    copied_multimodal_metrics: List[BaseMultimodalMetric] = (
-                        copy_metrics(mllm_metrics)
-                    )
+                    copied_multimodal_metrics: List[
+                        BaseMultimodalMetric
+                    ] = copy_metrics(mllm_metrics)
                     task = execute_with_semaphore(
                         func=a_execute_mllm_test_cases,
                         metrics=copied_multimodal_metrics,
@@ -747,12 +655,100 @@ async def a_execute_test_cases(
                         count=mllm_test_case_counter,
                         ignore_errors=ignore_errors,
                         skip_on_missing_params=skip_on_missing_params,
-                        _use_bar_indicator=_use_bar_indicator,
                         show_indicator=show_indicator,
+                        _use_bar_indicator=_use_bar_indicator,
+                        pbar=pbar,
+                    )
+                    tasks.append(asyncio.create_task(task))
+
+                elif isinstance(test_case, ConversationalTestCase):
+                    conversational_test_case_counter += 1
+
+                    task = execute_with_semaphore(
+                        func=a_execute_conversational_test_cases,
+                        metrics=copy_metrics(metrics),
+                        test_case=test_case,
+                        test_run_manager=test_run_manager,
+                        test_results=test_results,
+                        count=conversational_test_case_counter,
+                        ignore_errors=ignore_errors,
+                        skip_on_missing_params=skip_on_missing_params,
+                        show_indicator=show_indicator,
+                        _use_bar_indicator=_use_bar_indicator,
+                        pbar=pbar,
                     )
                     tasks.append(asyncio.create_task(task))
 
                 await asyncio.sleep(throttle_value)
+            await asyncio.gather(*tasks)
+    else:
+        for test_case in test_cases:
+            if isinstance(test_case, LLMTestCase):
+                if len(llm_metrics) == 0:
+                    continue
+                llm_test_case_counter += 1
+
+                copied_llm_metrics: List[BaseMetric] = copy_metrics(
+                    llm_metrics
+                )
+                task = execute_with_semaphore(
+                    func=a_execute_llm_test_cases,
+                    metrics=copied_llm_metrics,
+                    test_case=test_case,
+                    test_run_manager=test_run_manager,
+                    test_results=test_results,
+                    count=llm_test_case_counter,
+                    test_run=test_run,
+                    ignore_errors=ignore_errors,
+                    skip_on_missing_params=skip_on_missing_params,
+                    use_cache=use_cache,
+                    _use_bar_indicator=_use_bar_indicator,
+                    show_indicator=show_indicator,
+                )
+                tasks.append(asyncio.create_task((task)))
+
+            elif isinstance(test_case, ConversationalTestCase):
+                conversational_test_case_counter += 1
+                copied_conversational_metrics: List[
+                    BaseConversationalMetric
+                ] = []
+                copied_conversational_metrics = copy_metrics(
+                    conversational_metrics
+                )
+                task = execute_with_semaphore(
+                    func=a_execute_conversational_test_cases,
+                    metrics=copied_conversational_metrics,
+                    test_case=test_case,
+                    test_run_manager=test_run_manager,
+                    test_results=test_results,
+                    count=conversational_test_case_counter,
+                    ignore_errors=ignore_errors,
+                    skip_on_missing_params=skip_on_missing_params,
+                    _use_bar_indicator=_use_bar_indicator,
+                    show_indicator=show_indicator,
+                )
+                tasks.append(asyncio.create_task((task)))
+
+            elif isinstance(test_case, MLLMTestCase):
+                mllm_test_case_counter += 1
+                copied_multimodal_metrics: List[BaseMultimodalMetric] = (
+                    copy_metrics(mllm_metrics)
+                )
+                task = execute_with_semaphore(
+                    func=a_execute_mllm_test_cases,
+                    metrics=copied_multimodal_metrics,
+                    test_case=test_case,
+                    test_run_manager=test_run_manager,
+                    test_results=test_results,
+                    count=mllm_test_case_counter,
+                    ignore_errors=ignore_errors,
+                    skip_on_missing_params=skip_on_missing_params,
+                    _use_bar_indicator=_use_bar_indicator,
+                    show_indicator=show_indicator,
+                )
+                tasks.append(asyncio.create_task(task))
+
+            await asyncio.sleep(throttle_value)
         await asyncio.gather(*tasks)
 
     return test_results
@@ -1053,36 +1049,35 @@ def evaluate(
                 format_metric_description(metric, async_mode=run_async)
             )
 
-    with capture_evaluation_run("evaluate()"):
-        if run_async:
-            loop = get_or_create_event_loop()
-            test_results = loop.run_until_complete(
-                a_execute_test_cases(
-                    test_cases,
-                    metrics,
-                    ignore_errors=ignore_errors,
-                    use_cache=use_cache,
-                    verbose_mode=verbose_mode,
-                    save_to_disk=write_cache,
-                    show_indicator=show_indicator,
-                    skip_on_missing_params=skip_on_missing_params,
-                    throttle_value=throttle_value,
-                    identifier=identifier,
-                    max_concurrent=max_concurrent,
-                )
-            )
-        else:
-            test_results = execute_test_cases(
+    if run_async:
+        loop = get_or_create_event_loop()
+        test_results = loop.run_until_complete(
+            a_execute_test_cases(
                 test_cases,
                 metrics,
                 ignore_errors=ignore_errors,
                 use_cache=use_cache,
                 verbose_mode=verbose_mode,
                 save_to_disk=write_cache,
-                skip_on_missing_params=skip_on_missing_params,
-                identifier=identifier,
                 show_indicator=show_indicator,
+                skip_on_missing_params=skip_on_missing_params,
+                throttle_value=throttle_value,
+                identifier=identifier,
+                max_concurrent=max_concurrent,
             )
+        )
+    else:
+        test_results = execute_test_cases(
+            test_cases,
+            metrics,
+            ignore_errors=ignore_errors,
+            use_cache=use_cache,
+            verbose_mode=verbose_mode,
+            save_to_disk=write_cache,
+            skip_on_missing_params=skip_on_missing_params,
+            identifier=identifier,
+            show_indicator=show_indicator,
+        )
 
     end_time = time.perf_counter()
     run_duration = end_time - start_time

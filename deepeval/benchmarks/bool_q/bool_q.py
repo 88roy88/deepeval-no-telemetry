@@ -8,7 +8,6 @@ from deepeval.benchmarks.base_benchmark import DeepEvalBaseBenchmark
 from deepeval.models import DeepEvalBaseLLM
 from deepeval.benchmarks.bool_q.template import BoolQTemplate
 from deepeval.benchmarks.schema import AffirmationSchema
-from deepeval.telemetry import capture_benchmark_run
 
 
 class BoolQ(DeepEvalBaseBenchmark):
@@ -39,44 +38,43 @@ class BoolQ(DeepEvalBaseBenchmark):
             self.confinement_instructions = confinement_instructions
 
     def evaluate(self, model: DeepEvalBaseLLM) -> Dict:
-        with capture_benchmark_run("BoolQ", self.n_problems):
-            overall_correct_predictions = 0
-            overall_total_predictions = self.n_problems
-            predictions_row = []
+        overall_correct_predictions = 0
+        overall_total_predictions = self.n_problems
+        predictions_row = []
 
-            # Solving each problem
-            goldens = self.load_benchmark_dataset()[: self.n_problems]
-            for idx, golden in enumerate(
-                tqdm(goldens, desc=f"Processing {self.n_problems} problems")
-            ):
-                prediction, score = self.predict(model, golden).values()
-                if score:
-                    overall_correct_predictions += 1
-                predictions_row.append(
-                    (golden.input, prediction, golden.expected_output, score)
+        # Solving each problem
+        goldens = self.load_benchmark_dataset()[: self.n_problems]
+        for idx, golden in enumerate(
+            tqdm(goldens, desc=f"Processing {self.n_problems} problems")
+        ):
+            prediction, score = self.predict(model, golden).values()
+            if score:
+                overall_correct_predictions += 1
+            predictions_row.append(
+                (golden.input, prediction, golden.expected_output, score)
+            )
+            if self.verbose_mode:
+                self.print_verbose_logs(
+                    idx,
+                    golden.input,
+                    golden.expected_output,
+                    prediction,
+                    score,
                 )
-                if self.verbose_mode:
-                    self.print_verbose_logs(
-                        idx,
-                        golden.input,
-                        golden.expected_output,
-                        prediction,
-                        score,
-                    )
 
-            # Calculate overall accuracy
-            overall_accuracy = (
-                overall_correct_predictions / overall_total_predictions
-            )
-            print(f"Overall BoolQ Accuracy: {overall_accuracy}")
+        # Calculate overall accuracy
+        overall_accuracy = (
+            overall_correct_predictions / overall_total_predictions
+        )
+        print(f"Overall BoolQ Accuracy: {overall_accuracy}")
 
-            self.predictions = pd.DataFrame(
-                predictions_row,
-                columns=["Input", "Prediction", "Expected Output", "Correct"],
-            )
-            self.overall_score = overall_accuracy
+        self.predictions = pd.DataFrame(
+            predictions_row,
+            columns=["Input", "Prediction", "Expected Output", "Correct"],
+        )
+        self.overall_score = overall_accuracy
 
-            return overall_accuracy
+        return overall_accuracy
 
     def predict(self, model: DeepEvalBaseLLM, golden: Golden) -> Dict:
         # Define prompt template

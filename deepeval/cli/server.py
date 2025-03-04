@@ -5,8 +5,6 @@ import http.server
 import threading
 import json
 
-from deepeval.telemetry import set_logged_in_with
-
 LOGGED_IN_WITH = "logged_in_with"
 
 
@@ -33,7 +31,6 @@ def start_server(pairing_code: str, port: str, prod_url: str) -> str:
                 logged_in_with = data.get(LOGGED_IN_WITH)
                 pairing_code_recieved = data.get("pairing_code")
                 if logged_in_with and pairing_code == pairing_code_recieved:
-                    set_logged_in_with(logged_in_with)
                     self.send_response(200)
                     self.send_header("Access-Control-Allow-Origin", prod_url)
                     self.end_headers()

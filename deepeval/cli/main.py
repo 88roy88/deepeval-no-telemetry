@@ -9,7 +9,6 @@ import typer
 
 from deepeval.key_handler import KEY_FILE_HANDLER, KeyValues
 from deepeval.cli.recommend import app as recommend_app
-from deepeval.telemetry import capture_login_event, get_logged_in_with
 from deepeval.cli.test import app as test_app
 from deepeval.cli.server import start_server
 
@@ -52,60 +51,54 @@ def login(
         help="Use the existing API key stored in the key file if present.",
     ),
 ):
-    with capture_login_event() as span:
-        # Use the confident_api_key if it is provided, otherwise proceed with existing logic
-        try:
-            if use_existing:
-                confident_api_key = KEY_FILE_HANDLER.fetch_data(
-                    KeyValues.API_KEY
-                )
-                if confident_api_key:
-                    print("Using existing API key.")
+    if use_existing:
+        confident_api_key = KEY_FILE_HANDLER.fetch_data(
+            KeyValues.API_KEY
+        )
+        if confident_api_key:
+            print("Using existing API key.")
 
-            if confident_api_key:
-                api_key = confident_api_key
-            else:
-                """Login to the DeepEval platform."""
-                print("Welcome to :sparkles:[bold]DeepEval[/bold]:sparkles:!")
+    if confident_api_key:
+        api_key = confident_api_key
+    else:
+        """Login to the DeepEval platform."""
+        print("Welcome to :sparkles:[bold]DeepEval[/bold]:sparkles:!")
 
-                # Start the pairing server
-                port = find_available_port()
-                pairing_code = generate_pairing_code()
-                pairing_thread = threading.Thread(
-                    target=start_server,
-                    args=(pairing_code, port, PROD),
-                    daemon=True,
-                )
-                pairing_thread.start()
+        # Start the pairing server
+        port = find_available_port()
+        pairing_code = generate_pairing_code()
+        pairing_thread = threading.Thread(
+            target=start_server,
+            args=(pairing_code, port, PROD),
+            daemon=True,
+        )
+        pairing_thread.start()
 
-                # Open web url
-                login_url = f"{PROD}/pair?code={pairing_code}&port={port}"
-                print(
-                    f"Login and grab your API key here: [link={login_url}]{login_url}[/link] "
-                )
-                webbrowser.open(login_url)
+        # Open web url
+        login_url = f"{PROD}/pair?code={pairing_code}&port={port}"
+        print(
+            f"Login and grab your API key here: [link={login_url}]{login_url}[/link] "
+        )
+        webbrowser.open(login_url)
 
-                if api_key == "":
-                    while True:
-                        api_key = input("Paste your API Key: ").strip()
-                        if api_key:
-                            break
-                        else:
-                            print(
-                                "API Key cannot be empty. Please try again.\n"
-                            )
+        if api_key == "":
+            while True:
+                api_key = input("Paste your API Key: ").strip()
+                if api_key:
+                    break
+                else:
+                    print(
+                        "API Key cannot be empty. Please try again.\n"
+                    )
 
-            KEY_FILE_HANDLER.write_key(KeyValues.API_KEY, api_key)
-            span.set_attribute("completed", False)
+    KEY_FILE_HANDLER.write_key(KeyValues.API_KEY, api_key)
 
-            print(
-                "\n🎉🥳 Congratulations! You've successfully logged in! :raising_hands: "
-            )
-            print(
-                "You're now using DeepEval with [rgb(106,0,255)]Confident AI[/rgb(106,0,255)]. Follow our quickstart tutorial here: [bold][link=https://docs.confident-ai.com/confident-ai/confident-ai-introduction]https://docs.confident-ai.com/confident-ai/confident-ai-introduction[/link][/bold]"
-            )
-        except:
-            span.set_attribute("completed", False)
+    print(
+        "\n🎉🥳 Congratulations! You've successfully logged in! :raising_hands: "
+    )
+    print(
+        "You're now using DeepEval with [rgb(106,0,255)]Confident AI[/rgb(106,0,255)]. Follow our quickstart tutorial here: [bold][link=https://docs.confident-ai.com/confident-ai/confident-ai-introduction]https://docs.confident-ai.com/confident-ai/confident-ai-introduction[/link][/bold]"
+    )
 
 
 @app.command(name="set-azure-openai")

@@ -15,7 +15,6 @@ from deepeval.benchmarks.schema import (
     DROPNumberSchema,
     DROPStringSchema,
 )
-from deepeval.telemetry import capture_benchmark_run
 
 DELIMITER = ","
 
@@ -47,56 +46,38 @@ class DROP(DeepEvalBaseBenchmark):
     def evaluate(
         self, model: DeepEvalBaseLLM, batch_size: Optional[int] = None
     ) -> Dict:
-        with capture_benchmark_run("DROP", len(self.tasks)):
-            overall_correct_predictions = 0
-            overall_total_predictions = 0
-            predictions_row = []
-            scores_row = []
-            use_batch = should_use_batch(model, batch_size)
+        overall_correct_predictions = 0
+        overall_total_predictions = 0
+        predictions_row = []
+        scores_row = []
+        use_batch = should_use_batch(model, batch_size)
 
-            for task in self.tasks:
-                goldens = self.load_benchmark_dataset(task)
-                if (
-                    self.n_problems_per_task is not None
-                    and self.n_problems_per_task < len(goldens)
+        for task in self.tasks:
+            goldens = self.load_benchmark_dataset(task)
+            if (
+                self.n_problems_per_task is not None
+                and self.n_problems_per_task < len(goldens)
+            ):
+                goldens = goldens[: self.n_problems_per_task]
+            task_correct_predictions = 0
+            task_total_predictions = len(goldens)
+            overall_total_predictions += len(goldens)
+
+            # Calculate task accuracy
+            if use_batch:
+                for i in tqdm(
+                    range(0, len(goldens), batch_size),
+                    desc=f"Batch Processing {task.value} (batch_size={batch_size})",
                 ):
-                    goldens = goldens[: self.n_problems_per_task]
-                task_correct_predictions = 0
-                task_total_predictions = len(goldens)
-                overall_total_predictions += len(goldens)
-
-                # Calculate task accuracy
-                if use_batch:
-                    for i in tqdm(
-                        range(0, len(goldens), batch_size),
-                        desc=f"Batch Processing {task.value} (batch_size={batch_size})",
+                    goldens_batch = goldens[i : i + batch_size]
+                    batch_predictions = self.batch_predict(
+                        model, goldens_batch
+                    )
+                    for golden, prediction_dict in zip(
+                        goldens_batch, batch_predictions
                     ):
-                        goldens_batch = goldens[i : i + batch_size]
-                        batch_predictions = self.batch_predict(
-                            model, goldens_batch
-                        )
-                        for golden, prediction_dict in zip(
-                            goldens_batch, batch_predictions
-                        ):
-                            prediction = prediction_dict["prediction"]
-                            score = prediction_dict["score"]
-                            if score:
-                                task_correct_predictions += 1
-                                overall_correct_predictions += 1
-                            predictions_row.append(
-                                (
-                                    task.value,
-                                    golden.input,
-                                    prediction,
-                                    golden.expected_output,
-                                    score,
-                                )
-                            )
-                else:
-                    for idx, golden in enumerate(
-                        tqdm(goldens, desc=f"Processing {task.value}")
-                    ):
-                        prediction, score = self.predict(model, golden).values()
+                        prediction = prediction_dict["prediction"]
+                        score = prediction_dict["score"]
                         if score:
                             task_correct_predictions += 1
                             overall_correct_predictions += 1
@@ -109,48 +90,65 @@ class DROP(DeepEvalBaseBenchmark):
                                 score,
                             )
                         )
-                        if self.verbose_mode:
-                            self.print_verbose_logs(
-                                idx,
-                                task.value,
-                                golden.input,
-                                golden.expected_output,
-                                prediction,
-                                score,
-                            )
+            else:
+                for idx, golden in enumerate(
+                    tqdm(goldens, desc=f"Processing {task.value}")
+                ):
+                    prediction, score = self.predict(model, golden).values()
+                    if score:
+                        task_correct_predictions += 1
+                        overall_correct_predictions += 1
+                    predictions_row.append(
+                        (
+                            task.value,
+                            golden.input,
+                            prediction,
+                            golden.expected_output,
+                            score,
+                        )
+                    )
+                    if self.verbose_mode:
+                        self.print_verbose_logs(
+                            idx,
+                            task.value,
+                            golden.input,
+                            golden.expected_output,
+                            prediction,
+                            score,
+                        )
 
-                task_accuracy = (
-                    task_correct_predictions / task_total_predictions
-                )
-                print(
-                    f"DROP Task Accuracy (task={task.value}): {task_accuracy}"
-                )
-                scores_row.append((task.value, task_accuracy))
-
-            # Calculate overall accuracy
-            overall_accuracy = (
-                overall_correct_predictions / overall_total_predictions
+            task_accuracy = (
+                task_correct_predictions / task_total_predictions
             )
-            print(f"Overall DROP Accuracy: {overall_accuracy}")
-
-            # Create a DataFrame from task_results_data
-            # Columns: 'Task', 'Input', 'Prediction', 'Score'
-            self.predictions = pd.DataFrame(
-                predictions_row,
-                columns=[
-                    "Task",
-                    "Input",
-                    "Prediction",
-                    "Expected Output",
-                    "Correct",
-                ],
+            print(
+                f"DROP Task Accuracy (task={task.value}): {task_accuracy}"
             )
-            self.task_scores = pd.DataFrame(
-                scores_row, columns=["Task", "Score"]
-            )
-            self.overall_score = overall_accuracy
+            scores_row.append((task.value, task_accuracy))
 
-            return overall_accuracy
+        # Calculate overall accuracy
+        overall_accuracy = (
+            overall_correct_predictions / overall_total_predictions
+        )
+        print(f"Overall DROP Accuracy: {overall_accuracy}")
+
+        # Create a DataFrame from task_results_data
+        # Columns: 'Task', 'Input', 'Prediction', 'Score'
+        self.predictions = pd.DataFrame(
+            predictions_row,
+            columns=[
+                "Task",
+                "Input",
+                "Prediction",
+                "Expected Output",
+                "Correct",
+            ],
+        )
+        self.task_scores = pd.DataFrame(
+            scores_row, columns=["Task", "Score"]
+        )
+        self.overall_score = overall_accuracy
+
+        return overall_accuracy
 
     def predict(self, model: DeepEvalBaseLLM, golden: Golden) -> Dict:
         # Define prompt template

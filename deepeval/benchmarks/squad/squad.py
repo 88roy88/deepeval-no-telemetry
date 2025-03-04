@@ -9,7 +9,6 @@ from deepeval.models import DeepEvalBaseLLM
 from deepeval.benchmarks.squad.task import SQuADTask
 from deepeval.benchmarks.squad.template import SQuADTemplate
 from deepeval.benchmarks.schema import MultipleChoiceSchemaLower
-from deepeval.telemetry import capture_benchmark_run
 from deepeval.metrics.utils import initialize_model
 
 
@@ -47,81 +46,80 @@ class SQuAD(DeepEvalBaseBenchmark):
             self.confinement_instructions = confinement_instructions
 
     def evaluate(self, model: DeepEvalBaseLLM) -> Dict:
-        with capture_benchmark_run("SQuAD", len(self.tasks)):
-            overall_correct_predictions = 0
-            overall_total_predictions = 0
-            predictions_row = []
-            scores_row = []
+        overall_correct_predictions = 0
+        overall_total_predictions = 0
+        predictions_row = []
+        scores_row = []
 
-            for task in self.tasks:
-                goldens = self.load_benchmark_dataset(task)
-                if (
-                    self.n_problems_per_task is not None
-                    and self.n_problems_per_task < len(goldens)
-                ):
-                    goldens = goldens[: self.n_problems_per_task]
-                task_correct_predictions = 0
-                task_total_predictions = len(goldens)
-                overall_total_predictions += len(goldens)
+        for task in self.tasks:
+            goldens = self.load_benchmark_dataset(task)
+            if (
+                self.n_problems_per_task is not None
+                and self.n_problems_per_task < len(goldens)
+            ):
+                goldens = goldens[: self.n_problems_per_task]
+            task_correct_predictions = 0
+            task_total_predictions = len(goldens)
+            overall_total_predictions += len(goldens)
 
-                for idx, golden in enumerate(
-                    tqdm(goldens, desc=f"Processing {task.value}")
-                ):
-                    prediction, score = self.predict(model, golden).values()
-                    if score:
-                        task_correct_predictions += 1
-                        overall_correct_predictions += 1
-                    predictions_row.append(
-                        (
-                            task.value,
-                            golden.input,
-                            prediction,
-                            golden.expected_output,
-                            score,
-                        )
+            for idx, golden in enumerate(
+                tqdm(goldens, desc=f"Processing {task.value}")
+            ):
+                prediction, score = self.predict(model, golden).values()
+                if score:
+                    task_correct_predictions += 1
+                    overall_correct_predictions += 1
+                predictions_row.append(
+                    (
+                        task.value,
+                        golden.input,
+                        prediction,
+                        golden.expected_output,
+                        score,
                     )
-                    if self.verbose_mode:
-                        self.print_verbose_logs(
-                            idx,
-                            task.value,
-                            golden.input,
-                            golden.expected_output,
-                            prediction,
-                            score,
-                        )
-
-                task_accuracy = (
-                    task_correct_predictions / task_total_predictions
                 )
-                print(
-                    f"SQuAD Task Accuracy (task={task.value}): {task_accuracy}"
-                )
-                scores_row.append((task.value, task_accuracy))
+                if self.verbose_mode:
+                    self.print_verbose_logs(
+                        idx,
+                        task.value,
+                        golden.input,
+                        golden.expected_output,
+                        prediction,
+                        score,
+                    )
 
-            # Calculate overall accuracy
-            overall_accuracy = (
-                overall_correct_predictions / overall_total_predictions
+            task_accuracy = (
+                task_correct_predictions / task_total_predictions
             )
-            print(f"Overall SQuAD Accuracy: {overall_accuracy}")
+            print(
+                f"SQuAD Task Accuracy (task={task.value}): {task_accuracy}"
+            )
+            scores_row.append((task.value, task_accuracy))
 
-            # Create a DataFrame from task_results_data
-            # Columns: 'Task', 'Input', 'Prediction', 'Score'
-            self.predictions = pd.DataFrame(
-                predictions_row,
-                columns=[
-                    "Task",
-                    "Input",
-                    "Prediction",
-                    "Expected Output",
-                    "Correct",
-                ],
-            )
-            self.task_scores = pd.DataFrame(
-                scores_row, columns=["Task", "Score"]
-            )
-            self.overall_score = overall_accuracy
+        # Calculate overall accuracy
+        overall_accuracy = (
+            overall_correct_predictions / overall_total_predictions
+        )
+        print(f"Overall SQuAD Accuracy: {overall_accuracy}")
 
-            return overall_accuracy
+        # Create a DataFrame from task_results_data
+        # Columns: 'Task', 'Input', 'Prediction', 'Score'
+        self.predictions = pd.DataFrame(
+            predictions_row,
+            columns=[
+                "Task",
+                "Input",
+                "Prediction",
+                "Expected Output",
+                "Correct",
+            ],
+        )
+        self.task_scores = pd.DataFrame(
+            scores_row, columns=["Task", "Score"]
+        )
+        self.overall_score = overall_accuracy
+
+        return overall_accuracy
 
     def predict(self, model: DeepEvalBaseLLM, golden: Golden) -> Dict:
         # Define prompt template

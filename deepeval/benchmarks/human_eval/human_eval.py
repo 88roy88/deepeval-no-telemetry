@@ -7,7 +7,6 @@ from deepeval.benchmarks.base_benchmark import DeepEvalBaseBenchmark
 from deepeval.models import DeepEvalBaseLLM
 from deepeval.benchmarks.human_eval.task import HumanEvalTask
 from deepeval.benchmarks.human_eval.template import HumanEvalTemplate
-from deepeval.telemetry import capture_benchmark_run
 
 
 class HumanEval(DeepEvalBaseBenchmark):
@@ -35,68 +34,67 @@ class HumanEval(DeepEvalBaseBenchmark):
         self.verbose_mode: bool = (False,)
 
     def evaluate(self, model: DeepEvalBaseLLM, k: int) -> Dict:
-        with capture_benchmark_run("HumanEval", len(self.tasks)):
-            assert self.n >= k
-            overall_correct_predictions = 0
-            overall_total_predictions = 0
-            predictions_row = []
-            scores_row = []
+        assert self.n >= k
+        overall_correct_predictions = 0
+        overall_total_predictions = 0
+        predictions_row = []
+        scores_row = []
 
-            for task in self.tasks:
-                golden: Golden = self.load_benchmark_dataset(task)
-                task_correct = 0
-                overall_total_predictions += 1
+        for task in self.tasks:
+            golden: Golden = self.load_benchmark_dataset(task)
+            task_correct = 0
+            overall_total_predictions += 1
 
-                # Calculate task accuracy
-                prediction, score = self.predict(
-                    model, task, golden, k
-                ).values()
-                if score:
-                    task_correct = 1
-                    overall_correct_predictions += 1
-                predictions_row.append(
-                    (
-                        task.value,
-                        golden.input,
-                        prediction,
-                        golden.expected_output,
-                        score,
-                    )
+            # Calculate task accuracy
+            prediction, score = self.predict(
+                model, task, golden, k
+            ).values()
+            if score:
+                task_correct = 1
+                overall_correct_predictions += 1
+            predictions_row.append(
+                (
+                    task.value,
+                    golden.input,
+                    prediction,
+                    golden.expected_output,
+                    score,
                 )
-                if self.verbose_mode:
-                    self.print_verbose_logs(
-                        task.value, golden.input, prediction, score
-                    )
-                print(
-                    f"HumanEval Task Accuracy (task={task.value}): {task_correct}"
+            )
+            if self.verbose_mode:
+                self.print_verbose_logs(
+                    task.value, golden.input, prediction, score
                 )
-                scores_row.append((task.value, task_correct))
-
-            # Calculate overall accuracy
-            overall_accuracy = (
-                overall_correct_predictions / overall_total_predictions
+            print(
+                f"HumanEval Task Accuracy (task={task.value}): {task_correct}"
             )
-            print(f"Overall HumanEval Accuracy: {overall_accuracy}")
+            scores_row.append((task.value, task_correct))
 
-            # Create a DataFrame from task_results_data
-            # Columns: 'Task', 'Input', 'Prediction', 'Score'
-            self.predictions = pd.DataFrame(
-                predictions_row,
-                columns=[
-                    "Task",
-                    "Input",
-                    "Prediction",
-                    "Correct",
-                    "Expected Output",
-                    "Score",
-                ],
-            )
-            self.task_scores = pd.DataFrame(
-                scores_row, columns=["Task", "Score"]
-            )
-            self.overall_score = overall_accuracy
+        # Calculate overall accuracy
+        overall_accuracy = (
+            overall_correct_predictions / overall_total_predictions
+        )
+        print(f"Overall HumanEval Accuracy: {overall_accuracy}")
 
-            return overall_accuracy
+        # Create a DataFrame from task_results_data
+        # Columns: 'Task', 'Input', 'Prediction', 'Score'
+        self.predictions = pd.DataFrame(
+            predictions_row,
+            columns=[
+                "Task",
+                "Input",
+                "Prediction",
+                "Correct",
+                "Expected Output",
+                "Score",
+            ],
+        )
+        self.task_scores = pd.DataFrame(
+            scores_row, columns=["Task", "Score"]
+        )
+        self.overall_score = overall_accuracy
+
+        return overall_accuracy
 
     def predict(
         self,

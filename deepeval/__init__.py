@@ -2,7 +2,6 @@ import os
 import warnings
 import re
 
-# Optionally add telemetry
 from ._version import __version__
 
 from deepeval.event import track
@@ -11,7 +10,6 @@ from deepeval.evaluate import evaluate, assert_test
 from deepeval.auto_evaluate import auto_evaluate
 from deepeval.test_run import on_test_run_end, log_hyperparameters
 from deepeval.utils import login_with_confident_api_key
-from deepeval.telemetry import *
 from deepeval.integrations import trace_langchain, trace_llama_index
 from deepeval.confident import confident_evaluate
 
