@@ -5,28 +5,26 @@ description = "The LLM Evaluation Framework"
 authors = ["Jeffrey Ip <jeffreyip@confident-ai.com>"]
 license = "Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/confident-ai/deepeval"
+# original-repository = "https://github.com/confident-ai/deepeval"
+repository = "https://github.com/88roy88/deepeval-no-telemetry"
 documentation = "https://docs.confident-ai.com"
+
 
 [tool.poetry.scripts]
 deepeval = 'deepeval.cli.main:app'
 
-[tool.poetry.plugins."pytest11"]
-plugins = "deepeval.plugins.plugin"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
 
 [tool.poetry.dependencies]
-python = ">=3.9,<3.14"
+python = "^3.9"
 requests = "^2.31.0"
 tqdm = "^4.66.1"
-pytest = "^7.4.3"
-pytest-xdist = "*"
-pytest-repeat = "*"
-pytest-rerunfailures = "^12.0"
-pytest-asyncio = "^0.21.1"
 tabulate = "^0.9.0"
 rich = "^13.6.0"
-coverage = "*"
-black = "*"
 portalocker = "*"
 openai = "*"
 langchain = "*"
@@ -35,8 +33,6 @@ langchain_openai = "*"
 langchain_community = "*"
 protobuf = "*"
 typer = "*"
-setuptools = "*"
-wheel = "*"
 aiohttp = "*"
 llama-index = "*"
 llama-index-llms-langchain = "*"
@@ -44,19 +40,33 @@ docx2txt = "^0.8"
 importlib-metadata = ">=6.0.2"
 tenacity = "<=9.0.0"
 instructor = "*"
-twine="5.1.1"
-datasets="*"
-ollama="*"
+datasets = "*"
+ollama = "*"
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.3"
+pytest-xdist = "*"
+pytest-repeat = "*"
+pytest-rerunfailures = "^12.0"
+pytest-asyncio = "^0.21.1"
+coverage = "*"
+black = "*"
+setuptools = "*"
+wheel = "*"
+twine = "5.1.1"
+
 
 [tool.black]
 line-length = 80
 
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
 
 [tool.pytest.ini_options]
 addopts = "-m 'not skip_test'"
 markers = [
     "skip_test: skip the test",
 ]
+
+
+[tool.poetry.plugins."pytest11"]
+plugins = "deepeval.plugins.plugin"
