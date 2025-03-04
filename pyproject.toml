@@ -1,13 +1,15 @@
 [tool.poetry]
-name = "deepeval"
-version = "2.4.9"
+name = "deepeval-no-telemetry"
+version = "2.4.9a0"
 description = "The LLM Evaluation Framework"
-authors = ["Jeffrey Ip <jeffreyip@confident-ai.com>"]
+authors = ["Jeffrey Ip <jeffreyip@confident-ai.com>", "Roy M <88roy88@gmail.com>"]
 license = "Apache-2.0"
 readme = "README.md"
 # original-repository = "https://github.com/confident-ai/deepeval"
 repository = "https://github.com/88roy88/deepeval-no-telemetry"
 documentation = "https://docs.confident-ai.com"
+packages = [{ include = "deepeval" }]
+
 
 
 [tool.poetry.scripts]
